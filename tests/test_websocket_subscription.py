@@ -12,9 +12,24 @@ from gql.transport.websockets import WebsocketsTransport
 
 from .conftest import MS, WebSocketServer
 
-countdown_server_answer = (
-    '{{"type":"data","id":"{query_id}","payload":{{"data":{{"number":{number}}}}}}}'
-)
+countdown_schema = """
+
+type Number {
+  number: Int!
+}
+
+type Query {
+  currentCount: Number!
+}
+
+type Subscription {
+  countdown(count: Int!): Number!
+}
+
+"""
+
+countdown_server_answer = '{{"type":"data","id":"{query_id}","payload":\
+{{"data":{{"countdown":{{"number":{number}}}}}}}}}'
 
 WITH_KEEPALIVE = False
 
@@ -129,7 +144,7 @@ async def test_websocket_subscription(event_loop, client_and_server, subscriptio
 
     async for result in session.subscribe(subscription):
 
-        number = result["number"]
+        number = result["countdown"]["number"]
         print(f"Number received: {number}")
 
         assert number == count
@@ -152,7 +167,7 @@ async def test_websocket_subscription_break(
 
     async for result in session.subscribe(subscription):
 
-        number = result["number"]
+        number = result["countdown"]["number"]
         print(f"Number received: {number}")
 
         assert number == count
@@ -183,7 +198,7 @@ async def test_websocket_subscription_task_cancel(
         nonlocal count
         async for result in session.subscribe(subscription):
 
-            number = result["number"]
+            number = result["countdown"]["number"]
             print(f"Number received: {number}")
 
             assert number == count
@@ -222,7 +237,7 @@ async def test_websocket_subscription_close_transport(
         nonlocal count
         async for result in session.subscribe(subscription):
 
-            number = result["number"]
+            number = result["countdown"]["number"]
             print(f"Number received: {number}")
 
             assert number == count
@@ -287,7 +302,7 @@ async def test_websocket_subscription_server_connection_closed(
 
         async for result in session.subscribe(subscription):
 
-            number = result["number"]
+            number = result["countdown"]["number"]
             print(f"Number received: {number}")
 
             assert number == count
@@ -310,7 +325,7 @@ async def test_websocket_subscription_slow_consumer(
     async for result in session.subscribe(subscription):
         await asyncio.sleep(10 * MS)
 
-        number = result["number"]
+        number = result["countdown"]["number"]
         print(f"Number received: {number}")
 
         assert number == count
@@ -365,7 +380,7 @@ async def test_websocket_subscription_with_keepalive(
 
     async for result in session.subscribe(subscription):
 
-        number = result["number"]
+        number = result["countdown"]["number"]
         print(f"Number received: {number}")
 
         assert number == count
@@ -390,7 +405,7 @@ def test_websocket_subscription_sync(server, subscription_str):
 
     for result in client.subscribe(subscription):
 
-        number = result["number"]
+        number = result["countdown"]["number"]
         print(f"Number received: {number}")
 
         assert number == count
@@ -446,3 +461,47 @@ def test_websocket_subscription_sync_graceful_shutdown(server, subscription_str)
 
     # Check that the server received a connection_terminate message last
     assert logged_messages.pop() == '{"type": "connection_terminate"}'
+
+
+class NumberAddParser:
+    """ Class with a parse_value method used to increment a number """
+
+    def __init__(self, increment: int):
+        self.increment: int = increment
+
+    def parse_value(self, value: int) -> int:
+        return value + self.increment
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("server", [server_countdown], indirect=True)
+@pytest.mark.parametrize("subscription_str", [countdown_subscription_str])
+async def test_websocket_subscription_with_custom_types(
+    event_loop, server, subscription_str
+):
+
+    url = f"ws://{server.hostname}:{server.port}/graphql"
+
+    sample_transport = WebsocketsTransport(url=url)
+
+    count = 10
+    subscription = gql(subscription_str.format(count=count))
+
+    add_10 = NumberAddParser(10)
+
+    custom_types = {"Int": add_10}
+
+    # Instanciate a client which will add 10 to all the scalars of type Int received
+    async with Client(
+        transport=sample_transport, custom_types=custom_types, type_def=countdown_schema
+    ) as session:
+        async for result in session.subscribe(subscription):
+
+            number = result["countdown"]["number"]
+            print(f"Number received: {number}")
+
+            # We check here that the Int scalar has been correctly incremented by 10
+            assert number == count + 10
+            count -= 1
+
+        assert count == -1

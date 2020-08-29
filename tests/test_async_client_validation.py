@@ -269,3 +269,47 @@ async def test_async_client_validation_fetch_schema_from_server_with_client_argu
 
         with pytest.raises(graphql.error.GraphQLError):
             await session.execute(query)
+
+
+class ToLowercase:
+    @staticmethod
+    def parse_value(value: str):
+        return value.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("server", [hero_server_answers], indirect=True)
+async def test_async_client_validation_fetch_schema_from_server_with_custom_types(
+    event_loop, server
+):
+
+    url = f"ws://{server.hostname}:{server.port}/graphql"
+
+    sample_transport = WebsocketsTransport(url=url)
+
+    custom_types = {"String": ToLowercase}
+
+    async with Client(
+        transport=sample_transport,
+        fetch_schema_from_transport=True,
+        custom_types=custom_types,
+    ) as session:
+
+        query = gql(
+            """
+            query HeroNameQuery {
+              hero {
+                name
+              }
+            }
+        """
+        )
+
+        result = await session.execute(query)
+
+        print("Client received:", result)
+
+        # The expected hero name is now in lowercase
+        expected = {"hero": {"name": "r2-d2"}}
+
+        assert result == expected

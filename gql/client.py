@@ -17,6 +17,7 @@ from .transport.async_transport import AsyncTransport
 from .transport.exceptions import TransportQueryError
 from .transport.local_schema import LocalSchemaTransport
 from .transport.transport import Transport
+from .type_adapter import TypeAdapter
 
 
 class Client:
@@ -28,6 +29,7 @@ class Client:
         transport: Optional[Union[Transport, AsyncTransport]] = None,
         fetch_schema_from_transport: bool = False,
         execute_timeout: Optional[int] = 10,
+        custom_types: Optional[Dict[str, Any]] = None,
     ):
         assert not (
             type_def and introspection
@@ -77,9 +79,20 @@ class Client:
         # Enforced timeout of the execute function
         self.execute_timeout = execute_timeout
 
+        # Fetch schema from transport directly if we are using a sync transport
         if isinstance(transport, Transport) and fetch_schema_from_transport:
             with self as session:
                 session.fetch_schema()
+
+        # Dictionary where the name of the custom scalar type is the key and the
+        # value is a class which has a `parse_value()` function
+        self.custom_types = custom_types
+
+        # Create a type_adapter instance directly here if we received the schema
+        # locally or from a sync transport
+        self.type_adapter = (
+            TypeAdapter(schema, custom_types) if custom_types and schema else None
+        )
 
     def validate(self, document):
         assert (
@@ -233,7 +246,7 @@ class SyncClientSession:
 
         return self.transport.execute(document, *args, **kwargs)
 
-    def execute(self, document: DocumentNode, *args, **kwargs) -> Dict:
+    def execute(self, document: DocumentNode, *args, **kwargs) -> Dict[str, Any]:
 
         # Validate and execute on the transport
         result = self._execute(document, *args, **kwargs)
@@ -248,7 +261,10 @@ class SyncClientSession:
             result.data is not None
         ), "Transport returned an ExecutionResult without data or errors"
 
-        return result.data
+        if self.client.type_adapter:
+            return self.client.type_adapter.convert_scalars(result.data)
+        else:
+            return result.data
 
     def fetch_schema(self) -> None:
         execution_result = self.transport.execute(parse(get_introspection_query()))
@@ -280,6 +296,13 @@ class AsyncClientSession:
         if self.client.fetch_schema_from_transport and not self.client.schema:
             await self.fetch_schema()
 
+            # Once we have received the schema from the async transport,
+            # we can create a TypeAdapter instance if the user provided custom types
+            if self.client.custom_types and self.client.schema:
+                self.client.type_adapter = TypeAdapter(
+                    self.client.schema, self.client.custom_types
+                )
+
         # Validate document
         if self.client.schema:
             self.client.validate(document)
@@ -310,7 +333,7 @@ class AsyncClientSession:
 
     async def subscribe(
         self, document: DocumentNode, *args, **kwargs
-    ) -> AsyncGenerator[Dict, None]:
+    ) -> AsyncGenerator[Dict[str, Any], None]:
 
         # Validate and subscribe on the transport
         async for result in self._subscribe(document, *args, **kwargs):
@@ -322,7 +345,10 @@ class AsyncClientSession:
                 )
 
             elif result.data is not None:
-                yield result.data
+                if self.client.type_adapter:
+                    yield self.client.type_adapter.convert_scalars(result.data)
+                else:
+                    yield result.data
 
     async def _execute(
         self, document: DocumentNode, *args, **kwargs
@@ -337,7 +363,7 @@ class AsyncClientSession:
             self.client.execute_timeout,
         )
 
-    async def execute(self, document: DocumentNode, *args, **kwargs) -> Dict:
+    async def execute(self, document: DocumentNode, *args, **kwargs) -> Dict[str, Any]:
 
         # Validate and execute on the transport
         result = await self._execute(document, *args, **kwargs)
@@ -352,7 +378,10 @@ class AsyncClientSession:
             result.data is not None
         ), "Transport returned an ExecutionResult without data or errors"
 
-        return result.data
+        if self.client.type_adapter:
+            return self.client.type_adapter.convert_scalars(result.data)
+        else:
+            return result.data
 
     async def fetch_schema(self) -> None:
         execution_result = await self.transport.execute(
