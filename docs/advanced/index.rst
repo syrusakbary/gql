@@ -8,3 +8,4 @@ Advanced
    logging
    local_schema
    dsl_module
+   compiler

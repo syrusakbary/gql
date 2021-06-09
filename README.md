@@ -41,6 +41,7 @@ The main features of GQL are:
 * Supports [File uploads](https://gql.readthedocs.io/en/latest/usage/file_upload.html)
 * [gql-cli script](https://gql.readthedocs.io/en/latest/gql-cli/intro.html) to execute GraphQL queries from the command line
 * [DSL module](https://gql.readthedocs.io/en/latest/advanced/dsl_module.html) to compose GraphQL queries dynamically
+* [Compiler](https://gql.readthedocs.io/en/latest/advanced/compiler.html) to compile query files to strongly typed classes
 
 ## Installation
 

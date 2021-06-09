@@ -1,6 +1,5 @@
 import os
-
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 install_requires = [
     "graphql-core>=3.1.5,<3.2",
@@ -9,6 +8,7 @@ install_requires = [
 
 scripts = [
     "scripts/gql-cli",
+    "scripts/gql-compiler",
 ]
 
 tests_requires = [
@@ -19,6 +19,9 @@ tests_requires = [
     "mock==4.0.2",
     "vcrpy==4.0.2",
     "aiofiles",
+    "deepdiff>=4.3.2",
+    "dataclasses==0.6",
+    "dataclasses-json==0.5.2",
 ]
 
 dev_requires = [
@@ -44,8 +47,16 @@ install_websockets_requires = [
     "websockets>=9,<10",
 ]
 
+install_compiler_requires = [
+    "dataclasses==0.6",
+    "dataclasses-json==0.5.2",
+]
+
 install_all_requires = (
-    install_aiohttp_requires + install_requests_requires + install_websockets_requires
+    install_aiohttp_requires
+    + install_requests_requires
+    + install_websockets_requires
+    + install_compiler_requires
 )
 
 # Get version from __version__.py file
@@ -87,6 +98,7 @@ setup(
         "aiohttp": install_aiohttp_requires,
         "requests": install_requests_requires,
         "websockets": install_websockets_requires,
+        "compiler": install_compiler_requires,
     },
     include_package_data=True,
     zip_safe=False,
